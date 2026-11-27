@@ -51,7 +51,7 @@ export async function listPurchases(): Promise<Purchase[]> {
   return (data as PurchaseRow[]).map(mapPurchase)
 }
 
-/** Records a purchase. Existing rows are never overwritten. */
+/** Records a new purchase. */
 export async function addPurchase(input: AddPurchaseInput): Promise<Purchase> {
   const { data, error } = await requireSupabase()
     .from('purchases')
@@ -63,6 +63,28 @@ export async function addPurchase(input: AddPurchaseInput): Promise<Purchase> {
       supplier: input.supplier?.trim() || null,
       notes: input.notes?.trim() || null,
     })
+    .select(PURCHASE_COLUMNS)
+    .single()
+
+  if (error) throw new Error(errorMessage(error))
+  return mapPurchase(data as PurchaseRow)
+}
+
+/** Updates an existing purchase; Postgres recalculates unit_price automatically. */
+export async function updatePurchase(
+  input: { id: string } & AddPurchaseInput,
+): Promise<Purchase> {
+  const { data, error } = await requireSupabase()
+    .from('purchases')
+    .update({
+      ingredient_id: input.ingredientId,
+      purchase_date: input.purchaseDate,
+      quantity: input.quantity,
+      total_price: input.totalPrice,
+      supplier: input.supplier?.trim() || null,
+      notes: input.notes?.trim() || null,
+    })
+    .eq('id', input.id)
     .select(PURCHASE_COLUMNS)
     .single()
 

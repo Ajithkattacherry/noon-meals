@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addPurchase, listPurchases } from '../data/purchases'
+import { addPurchase, listPurchases, updatePurchase } from '../data/purchases'
 import { listIngredients } from '../data/ingredients'
-import { formatDate, formatINR, isISODate, todayISO } from '../lib/format'
+import { formatDate, formatINR, isISODate, roundMoney, todayISO } from '../lib/format'
 import type { Ingredient, Purchase } from '../lib/types'
 
 interface FormState {
+  id?: string
   ingredientId: string
   purchaseDate: string
   quantity: string
@@ -33,6 +34,8 @@ export default function Purchases() {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   async function load() {
     setLoading(true)
@@ -81,6 +84,19 @@ export default function Purchases() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  function startEdit(purchase: Purchase) {
+    setForm({
+      id: purchase.id,
+      ingredientId: purchase.ingredientId,
+      purchaseDate: purchase.purchaseDate,
+      quantity: purchase.quantity !== undefined ? String(purchase.quantity) : '',
+      totalPrice: purchase.totalPrice !== undefined ? String(purchase.totalPrice) : '',
+      supplier: purchase.supplier ?? '',
+      notes: purchase.notes ?? '',
+    })
+    setFormError(null)
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
@@ -104,19 +120,32 @@ export default function Purchases() {
 
     setSaving(true)
     try {
-      await addPurchase({
-        ingredientId: form.ingredientId,
-        purchaseDate: form.purchaseDate,
-        quantity,
-        totalPrice,
-        supplier: form.supplier,
-        notes: form.notes,
-      })
-      setForm((current) => ({
-        ...emptyForm(),
-        ingredientId: current.ingredientId,
-        purchaseDate: current.purchaseDate,
-      }))
+      if (form.id) {
+        await updatePurchase({
+          id: form.id,
+          ingredientId: form.ingredientId,
+          purchaseDate: form.purchaseDate,
+          quantity,
+          totalPrice,
+          supplier: form.supplier,
+          notes: form.notes,
+        })
+        setForm(emptyForm())
+      } else {
+        await addPurchase({
+          ingredientId: form.ingredientId,
+          purchaseDate: form.purchaseDate,
+          quantity,
+          totalPrice,
+          supplier: form.supplier,
+          notes: form.notes,
+        })
+        setForm((current) => ({
+          ...emptyForm(),
+          ingredientId: current.ingredientId,
+          purchaseDate: current.purchaseDate,
+        }))
+      }
       await load()
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : 'Could not save the purchase.')
@@ -125,12 +154,30 @@ export default function Purchases() {
     }
   }
 
-  const visiblePurchases =
-    filter === 'all'
-      ? purchases
-      : purchases.filter((purchase) => purchase.ingredientId === filter)
+  const visiblePurchases = useMemo(() => {
+    return purchases.filter((purchase) => {
+      if (filter !== 'all' && purchase.ingredientId !== filter) return false
+      if (fromDate && purchase.purchaseDate < fromDate) return false
+      if (toDate && purchase.purchaseDate > toDate) return false
+      return true
+    })
+  }, [purchases, filter, fromDate, toDate])
 
-  const activeIngredients = ingredients.filter((ingredient) => ingredient.active !== false)
+  const filteredTotalCost = useMemo(
+    () =>
+      roundMoney(
+        visiblePurchases.reduce(
+          (sum, purchase) => sum + (purchase.totalPrice ?? 0),
+          0,
+        ),
+      ),
+    [visiblePurchases],
+  )
+
+  const hasFilters = filter !== 'all' || fromDate !== '' || toDate !== ''
+  const selectableIngredients = ingredients.filter(
+    (ingredient) => ingredient.active !== false || ingredient.id === form.ingredientId,
+  )
 
   return (
     <div>
@@ -138,8 +185,8 @@ export default function Purchases() {
         <div>
           <h1>Purchases</h1>
           <p>
-            Record each weekly ingredient purchase. The unit price is calculated from the total
-            price and quantity, and purchases are never overwritten.
+            Record each ingredient purchase. The unit price is calculated from the total price and
+            quantity, and you can edit any past purchase from the history table.
           </p>
         </div>
       </div>
@@ -153,7 +200,7 @@ export default function Purchases() {
       <div className="grid-2">
         <section className="card">
           <div className="card-header">
-            <h2>Add purchase</h2>
+            <h2>{form.id ? 'Edit purchase' : 'Add purchase'}</h2>
           </div>
 
           <form onSubmit={handleSubmit} className="stack" noValidate>
@@ -166,7 +213,7 @@ export default function Purchases() {
                   onChange={(event) => update('ingredientId', event.target.value)}
                 >
                   <option value="">Select ingredient</option>
-                  {activeIngredients.map((ingredient) => (
+                  {selectableIngredients.map((ingredient) => (
                     <option key={ingredient.id} value={ingredient.id}>
                       {ingredient.name} ({ingredient.unit})
                     </option>
@@ -252,8 +299,20 @@ export default function Purchases() {
 
             <div className="form-actions">
               <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving…' : 'Add purchase'}
+                {saving ? 'Saving…' : form.id ? 'Save changes' : 'Add purchase'}
               </button>
+              {form.id && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setForm(emptyForm())
+                    setFormError(null)
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </form>
         </section>
@@ -261,8 +320,12 @@ export default function Purchases() {
         <section className="card">
           <div className="card-header">
             <h2>Purchase history</h2>
+            <span className="badge">{visiblePurchases.length} item(s)</span>
+          </div>
+
+          <div className="form-grid" style={{ marginBottom: 14 }}>
             <div>
-              <label htmlFor="purchase-filter">Filter</label>
+              <label htmlFor="purchase-filter">Filter by ingredient</label>
               <select
                 id="purchase-filter"
                 value={filter}
@@ -276,12 +339,54 @@ export default function Purchases() {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label htmlFor="purchase-from">From date</label>
+              <input
+                id="purchase-from"
+                type="date"
+                value={fromDate}
+                onChange={(event) => setFromDate(event.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="purchase-to">To date</label>
+              <input
+                id="purchase-to"
+                type="date"
+                value={toDate}
+                onChange={(event) => setToDate(event.target.value)}
+              />
+            </div>
+
+            {hasFilters && (
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setFilter('all')
+                    setFromDate('')
+                    setToDate('')
+                  }}
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="notice" style={{ marginBottom: 14 }}>
+            Total cost for selection: <strong>{formatINR(filteredTotalCost)}</strong>
           </div>
 
           {loading ? (
             <p className="muted">Loading purchases…</p>
           ) : visiblePurchases.length === 0 ? (
-            <p className="muted">No purchases recorded yet.</p>
+            <p className="muted">
+              {hasFilters ? 'No purchases match the selected filters.' : 'No purchases recorded yet.'}
+            </p>
           ) : (
             <div className="table-wrap">
               <table>
@@ -292,6 +397,7 @@ export default function Purchases() {
                     <th className="num">Quantity</th>
                     <th className="num">Total</th>
                     <th className="num">Unit price</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -315,6 +421,15 @@ export default function Purchases() {
                             : '—'}
                         </td>
                         <td className="num">{formatINR(purchase.unitPrice)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => startEdit(purchase)}
+                          >
+                            Edit
+                          </button>
+                        </td>
                       </tr>
                     )
                   })}
