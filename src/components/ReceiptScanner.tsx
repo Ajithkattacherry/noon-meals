@@ -153,7 +153,7 @@ export default function ReceiptScanner({
         )
       } catch (parseErr) {
         setNotice(
-          `${parseErr instanceof Error ? parseErr.message : 'Auto-parsing unavailable.'} File uploaded — enter the items below to attach and save it.`,
+          'The file was uploaded successfully, but we could not automatically read it. Below, you can enter the receipt details manually to attach it to your records.',
         )
         setParsed({
           supplier: '',
