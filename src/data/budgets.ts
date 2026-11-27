@@ -20,6 +20,8 @@ interface FixedBillRow {
   bill_date: string
   amount: number
   notes: string | null
+  receipt_id: string | null
+  receipt_path: string | null
 }
 
 interface WeeklyAllocationRow {
@@ -56,6 +58,8 @@ function mapFixedBill(row: FixedBillRow): FixedBill {
     billDate: row.bill_date,
     amount: Number(row.amount),
     notes: row.notes,
+    receiptId: row.receipt_id,
+    receiptPath: row.receipt_path,
   }
 }
 
@@ -90,7 +94,7 @@ export async function getMonthlyBudget(month: string): Promise<MonthlyBudgetBund
     await Promise.all([
       client
         .from('monthly_fixed_bills')
-        .select('id, monthly_budget_id, label, bill_date, amount, notes')
+        .select('id, monthly_budget_id, label, bill_date, amount, notes, receipt_id, receipt_path')
         .eq('monthly_budget_id', budget.id)
         .order('bill_date', { ascending: true }),
       client
@@ -144,6 +148,8 @@ export async function saveFixedBill(input: {
   billDate: string
   amount: number
   notes?: string
+  receiptId?: string | null
+  receiptPath?: string | null
 }): Promise<FixedBill> {
   const client = requireSupabase()
   const payload = {
@@ -152,6 +158,8 @@ export async function saveFixedBill(input: {
     bill_date: input.billDate,
     amount: input.amount,
     notes: input.notes?.trim() || null,
+    ...(input.receiptId !== undefined ? { receipt_id: input.receiptId } : {}),
+    ...(input.receiptPath !== undefined ? { receipt_path: input.receiptPath } : {}),
   }
 
   const query = input.id
@@ -159,7 +167,7 @@ export async function saveFixedBill(input: {
     : client.from('monthly_fixed_bills').insert(payload)
 
   const { data, error } = await query
-    .select('id, monthly_budget_id, label, bill_date, amount, notes')
+    .select('id, monthly_budget_id, label, bill_date, amount, notes, receipt_id, receipt_path')
     .single()
 
   if (error) throw new Error(errorMessage(error))

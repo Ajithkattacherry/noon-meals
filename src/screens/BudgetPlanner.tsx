@@ -10,6 +10,8 @@ import { listIngredients } from '../data/ingredients'
 import { listMenusInRange } from '../data/menus'
 import { listPurchases } from '../data/purchases'
 import { listRecipes } from '../data/recipes'
+import { getReceiptSignedUrl } from '../data/receipts'
+import ReceiptScanner from '../components/ReceiptScanner'
 import {
   reconcileMonthlyBudget,
   summarizeWeekIngredients,
@@ -559,13 +561,36 @@ export default function BudgetPlanner() {
                         <td className="num">{formatINR(bill.amount)}</td>
                         <td className="muted small">{bill.notes || '—'}</td>
                         <td>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            onClick={() => void handleDeleteBill(bill.id)}
-                          >
-                            Remove
-                          </button>
+                          <div className="actions">
+                            {bill.receiptPath && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                  void getReceiptSignedUrl(bill.receiptPath!)
+                                    .then((url) =>
+                                      window.open(url, '_blank', 'noopener,noreferrer'),
+                                    )
+                                    .catch((err) =>
+                                      setError(
+                                        err instanceof Error
+                                          ? err.message
+                                          : 'Could not open receipt.',
+                                      ),
+                                    )
+                                }}
+                              >
+                                View receipt
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => void handleDeleteBill(bill.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -574,6 +599,12 @@ export default function BudgetPlanner() {
               </div>
             )}
           </section>
+
+          <ReceiptScanner
+            ingredients={ingredients}
+            defaultDestination="fixed_bill"
+            onSaved={() => load(month)}
+          />
 
           <section className="stack">
             {weekBreakdowns.map((week, index) => {

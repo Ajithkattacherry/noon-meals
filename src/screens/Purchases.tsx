@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addPurchase, listPurchases, updatePurchase } from '../data/purchases'
 import { listIngredients } from '../data/ingredients'
+import { getReceiptSignedUrl } from '../data/receipts'
+import ReceiptScanner from '../components/ReceiptScanner'
 import { formatDate, formatINR, isISODate, roundMoney, todayISO } from '../lib/format'
 import type { Ingredient, Purchase } from '../lib/types'
 
@@ -196,6 +198,12 @@ export default function Purchases() {
           {error}
         </p>
       )}
+
+      <ReceiptScanner
+        ingredients={ingredients}
+        defaultDestination="purchase"
+        onSaved={load}
+      />
 
       <div className="grid-2">
         <section className="card">
@@ -422,13 +430,36 @@ export default function Purchases() {
                         </td>
                         <td className="num">{formatINR(purchase.unitPrice)}</td>
                         <td>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => startEdit(purchase)}
-                          >
-                            Edit
-                          </button>
+                          <div className="actions">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => startEdit(purchase)}
+                            >
+                              Edit
+                            </button>
+                            {purchase.receiptPath && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                  void getReceiptSignedUrl(purchase.receiptPath!)
+                                    .then((url) =>
+                                      window.open(url, '_blank', 'noopener,noreferrer'),
+                                    )
+                                    .catch((err) =>
+                                      setError(
+                                        err instanceof Error
+                                          ? err.message
+                                          : 'Could not open receipt.',
+                                      ),
+                                    )
+                                }}
+                              >
+                                View receipt
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

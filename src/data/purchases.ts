@@ -10,6 +10,8 @@ interface PurchaseRow {
   unit_price: number
   supplier: string | null
   notes: string | null
+  receipt_id: string | null
+  receipt_path: string | null
   created_at: string
 }
 
@@ -20,6 +22,8 @@ export interface AddPurchaseInput {
   totalPrice: number
   supplier?: string
   notes?: string
+  receiptId?: string | null
+  receiptPath?: string | null
 }
 
 function mapPurchase(row: PurchaseRow): Purchase {
@@ -32,12 +36,14 @@ function mapPurchase(row: PurchaseRow): Purchase {
     unitPrice: Number(row.unit_price),
     supplier: row.supplier,
     notes: row.notes,
+    receiptId: row.receipt_id,
+    receiptPath: row.receipt_path,
     createdAt: row.created_at,
   }
 }
 
 const PURCHASE_COLUMNS =
-  'id, ingredient_id, purchase_date, quantity, total_price, unit_price, supplier, notes, created_at'
+  'id, ingredient_id, purchase_date, quantity, total_price, unit_price, supplier, notes, receipt_id, receipt_path, created_at'
 
 /** Newest purchases first. */
 export async function listPurchases(): Promise<Purchase[]> {
@@ -62,6 +68,8 @@ export async function addPurchase(input: AddPurchaseInput): Promise<Purchase> {
       total_price: input.totalPrice,
       supplier: input.supplier?.trim() || null,
       notes: input.notes?.trim() || null,
+      receipt_id: input.receiptId ?? null,
+      receipt_path: input.receiptPath ?? null,
     })
     .select(PURCHASE_COLUMNS)
     .single()
@@ -83,6 +91,8 @@ export async function updatePurchase(
       total_price: input.totalPrice,
       supplier: input.supplier?.trim() || null,
       notes: input.notes?.trim() || null,
+      ...(input.receiptId !== undefined ? { receipt_id: input.receiptId } : {}),
+      ...(input.receiptPath !== undefined ? { receipt_path: input.receiptPath } : {}),
     })
     .eq('id', input.id)
     .select(PURCHASE_COLUMNS)

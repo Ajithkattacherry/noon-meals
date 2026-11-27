@@ -22,6 +22,8 @@ export interface Purchase {
   totalPrice?: number
   supplier?: string | null
   notes?: string | null
+  receiptId?: string | null
+  receiptPath?: string | null
 }
 
 export interface RecipeItem {
@@ -110,6 +112,8 @@ export interface FixedBill {
   billDate: string
   amount: number
   notes?: string | null
+  receiptId?: string | null
+  receiptPath?: string | null
 }
 
 export interface WeeklyBillAllocation {
@@ -169,4 +173,27 @@ export interface WeekMenuBreakdown {
   estimatedVegetableCost: number
   estimatedGroceryCost: number
   estimatedSnacksCost: number
+}
+
+export type ReceiptTargetType = 'purchase' | 'fixed_bill' | 'mixed'
+export type ReceiptItemDestination = 'purchase' | 'fixed_bill'
+
+export interface ParsedReceiptItem {
+  id: string
+  rawName: string
+  matchedIngredientId: string
+  matchedIngredientName: string | null
+  destination: ReceiptItemDestination
+  category: IngredientCategory
+  quantity: number
+  unit: Unit
+  totalPrice: number
+}
+
+export interface ParsedReceipt {
+  supplier: string
+  billNumber: string
+  billDate: string
+  totalAmount: number | null
+  items: ParsedReceiptItem[]
 }
