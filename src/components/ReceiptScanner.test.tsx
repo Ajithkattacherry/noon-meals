@@ -3,7 +3,10 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ReceiptScanner from './ReceiptScanner'
 import {
+  computeFileHash,
   createReceiptUpload,
+  deleteReceiptUpload,
+  listReceiptUploads,
   parseReceiptWithEdgeFunction,
   uploadReceiptFile,
 } from '../data/receipts'
@@ -12,9 +15,13 @@ import { getMonthlyBudget, saveFixedBill } from '../data/budgets'
 import type { Ingredient } from '../lib/types'
 
 vi.mock('../data/receipts', () => ({
+  computeFileHash: vi.fn(),
+  listReceiptUploads: vi.fn(),
   uploadReceiptFile: vi.fn(),
   parseReceiptWithEdgeFunction: vi.fn(),
   createReceiptUpload: vi.fn(),
+  deleteReceiptUpload: vi.fn(),
+  getReceiptSignedUrl: vi.fn(),
 }))
 vi.mock('../data/purchases', () => ({
   addPurchase: vi.fn(),
@@ -31,6 +38,8 @@ const ingredients: Ingredient[] = [
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(computeFileHash).mockResolvedValue('hash-new')
+  vi.mocked(listReceiptUploads).mockResolvedValue([])
   vi.mocked(uploadReceiptFile).mockResolvedValue({
     storagePath: '2026-10-03/bill.jpg',
     fileName: 'bill.jpg',
@@ -89,6 +98,7 @@ beforeEach(() => {
     billDate: '2026-10-03',
     amount: 1952.6,
   })
+  vi.mocked(deleteReceiptUpload).mockResolvedValue()
 })
 
 describe('ReceiptScanner', () => {
@@ -127,6 +137,72 @@ describe('ReceiptScanner', () => {
         receiptPath: '2026-10-03/bill.jpg',
       }),
     )
+    expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('blocks duplicate file upload until user confirms Upload anyway', async () => {
+    const user = userEvent.setup()
+    vi.mocked(computeFileHash).mockResolvedValue('dup-hash')
+    vi.mocked(listReceiptUploads).mockResolvedValue([
+      {
+        id: 'r-old',
+        storagePath: '2026-10-03/old.jpg',
+        fileName: 'old.jpg',
+        mimeType: 'image/jpeg',
+        fileHash: 'dup-hash',
+        billNumber: '118',
+        supplier: 'Cheerakuzhy Stores',
+        billDate: '2026-10-03',
+        totalAmount: 2942.5,
+        targetType: 'purchase',
+        status: 'saved',
+        createdAt: '2026-10-03T08:00:00Z',
+      },
+    ])
+
+    render(<ReceiptScanner ingredients={ingredients} onSaved={vi.fn()} />)
+    await screen.findByRole('button', { name: 'Upload history (1)' })
+
+    const file = new File(['dummy'], 'bill.jpg', { type: 'image/jpeg' })
+    await user.upload(screen.getByLabelText('Receipt image or PDF'), file)
+    await user.click(screen.getByRole('button', { name: 'Upload & parse bill' }))
+
+    expect(await screen.findByText(/Duplicate file detected/i)).toBeInTheDocument()
+    expect(uploadReceiptFile).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Upload anyway' }))
+    expect(uploadReceiptFile).toHaveBeenCalled()
+  })
+
+  it('deletes an upload and linked entries from Upload history', async () => {
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    vi.mocked(listReceiptUploads).mockResolvedValue([
+      {
+        id: 'r-old',
+        storagePath: '2026-10-03/old.jpg',
+        fileName: 'old.jpg',
+        mimeType: 'image/jpeg',
+        fileHash: 'dup-hash',
+        billNumber: '118',
+        supplier: 'Cheerakuzhy Stores',
+        billDate: '2026-10-03',
+        totalAmount: 2942.5,
+        targetType: 'purchase',
+        status: 'saved',
+        createdAt: '2026-10-03T08:00:00Z',
+      },
+    ])
+
+    render(<ReceiptScanner ingredients={ingredients} onSaved={onSaved} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Upload history (1)' }))
+    expect(screen.getByText('Cheerakuzhy Stores')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
+
+    expect(deleteReceiptUpload).toHaveBeenCalledWith('r-old', '2026-10-03/old.jpg')
     expect(onSaved).toHaveBeenCalled()
   })
 })

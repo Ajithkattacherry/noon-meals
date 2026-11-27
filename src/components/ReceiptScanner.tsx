@@ -1,18 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getMonthlyBudget, saveFixedBill, saveMonthlyBudgetTarget } from '../data/budgets'
 import { addPurchase } from '../data/purchases'
 import {
+  computeFileHash,
   createReceiptUpload,
+  deleteReceiptUpload,
+  getReceiptSignedUrl,
+  listReceiptUploads,
   parseReceiptWithEdgeFunction,
   uploadReceiptFile,
 } from '../data/receipts'
-import { formatINR, isISODate, roundMoney, todayISO } from '../lib/format'
-import { determineTargetType } from '../lib/receipts'
+import { formatDate, formatINR, isISODate, roundMoney, todayISO } from '../lib/format'
+import {
+  determineTargetType,
+  findDuplicateReceipt,
+  type DuplicateMatch,
+} from '../lib/receipts'
 import type {
   Ingredient,
   ParsedReceipt,
   ParsedReceiptItem,
   ReceiptItemDestination,
+  ReceiptUploadRecord,
 } from '../lib/types'
 
 interface ReceiptScannerProps {
@@ -38,18 +47,44 @@ function emptyItem(
   }
 }
 
+function formatDuplicateWarning(match: DuplicateMatch): string {
+  const rec = match.record
+  const desc = [
+    rec.supplier || rec.fileName,
+    rec.billNumber ? `Bill ${rec.billNumber}` : '',
+    rec.billDate ? formatDate(rec.billDate) : '',
+    rec.totalAmount !== null ? formatINR(rec.totalAmount) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  if (match.reason === 'file_hash') {
+    return `Duplicate file detected: this exact file was already uploaded (${desc}).`
+  }
+  if (match.reason === 'bill_number') {
+    return `Possible duplicate bill: same supplier and bill number already exist in upload history (${desc}).`
+  }
+  return `Possible duplicate bill: another upload already has the same date and total (${desc}).`
+}
+
 export default function ReceiptScanner({
   ingredients,
   defaultDestination = 'purchase',
   onSaved,
 }: ReceiptScannerProps) {
   const [file, setFile] = useState<File | null>(null)
+  const [fileHash, setFileHash] = useState<string | null>(null)
+  const [duplicateFileMatch, setDuplicateFileMatch] = useState<DuplicateMatch | null>(null)
   const [uploadedFile, setUploadedFile] = useState<{
     storagePath: string
     fileName: string
     mimeType: string
   } | null>(null)
   const [parsed, setParsed] = useState<ParsedReceipt | null>(null)
+  const [uploads, setUploads] = useState<ReceiptUploadRecord[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -58,7 +93,30 @@ export default function ReceiptScanner({
 
   const activeIngredients = ingredients.filter((i) => i.active !== false)
 
-  async function handleUploadAndParse() {
+  async function refreshUploads() {
+    try {
+      const list = await listReceiptUploads()
+      setUploads(list)
+    } catch {
+      // History is secondary; avoid blocking the scanner if table isn't migrated yet
+    }
+  }
+
+  useEffect(() => {
+    void refreshUploads()
+  }, [])
+
+  const metadataDuplicate = useMemo(() => {
+    if (!parsed) return null
+    return findDuplicateReceipt(uploads, {
+      supplier: parsed.supplier,
+      billNumber: parsed.billNumber,
+      billDate: parsed.billDate,
+      totalAmount: parsed.totalAmount,
+    })
+  }, [parsed, uploads])
+
+  async function handleUploadAndParse(forceDuplicate = false) {
     if (!file) {
       setError('Choose a receipt image or PDF first.')
       return
@@ -70,6 +128,19 @@ export default function ReceiptScanner({
     setParsing(true)
 
     try {
+      const hash = fileHash ?? (await computeFileHash(file))
+      setFileHash(hash)
+
+      if (!forceDuplicate && hash) {
+        const dup = findDuplicateReceipt(uploads, { fileHash: hash })
+        if (dup) {
+          setDuplicateFileMatch(dup)
+          setParsing(false)
+          return
+        }
+      }
+      setDuplicateFileMatch(null)
+
       const uploaded = await uploadReceiptFile(file)
       setUploadedFile(uploaded)
 
@@ -169,6 +240,7 @@ export default function ReceiptScanner({
         storagePath: uploadedFile.storagePath,
         fileName: uploadedFile.fileName,
         mimeType: uploadedFile.mimeType,
+        fileHash,
         billNumber: parsed.billNumber,
         supplier: parsed.supplier,
         billDate: parsed.billDate,
@@ -227,16 +299,34 @@ export default function ReceiptScanner({
 
       setParsed(null)
       setFile(null)
+      setFileHash(null)
+      setDuplicateFileMatch(null)
       setUploadedFile(null)
       setNotice(null)
       setSuccess(
         `Saved ${purchaseRows.length} purchase(s) and ${fixedRows.length} fixed bill(s) with receipt attached.`,
       )
-      await onSaved()
+      await Promise.all([refreshUploads(), Promise.resolve(onSaved())])
     } catch (saveErr) {
       setError(saveErr instanceof Error ? saveErr.message : 'Could not save parsed receipt.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDeleteUpload(upload: ReceiptUploadRecord) {
+    setError(null)
+    setSuccess(null)
+    setDeletingId(upload.id)
+    try {
+      await deleteReceiptUpload(upload.id, upload.storagePath)
+      setConfirmDeleteId(null)
+      setSuccess(`Deleted "${upload.fileName}" and its linked database entries.`)
+      await Promise.all([refreshUploads(), Promise.resolve(onSaved())])
+    } catch (delErr) {
+      setError(delErr instanceof Error ? delErr.message : 'Could not delete upload.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -254,6 +344,13 @@ export default function ReceiptScanner({
             Ingredient Purchases or Monthly Fixed Bills.
           </span>
         </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => setShowHistory((v) => !v)}
+        >
+          {showHistory ? 'Hide upload history' : `Upload history (${uploads.length})`}
+        </button>
       </div>
 
       {error && (
@@ -272,7 +369,33 @@ export default function ReceiptScanner({
         </p>
       )}
 
-      <div className="form-grid" style={{ marginBottom: parsed ? 16 : 0 }}>
+      {duplicateFileMatch && (
+        <div className="notice notice-warn" role="alert" style={{ marginBottom: 12 }}>
+          <p style={{ margin: '0 0 8px' }}>{formatDuplicateWarning(duplicateFileMatch)}</p>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => void handleUploadAndParse(true)}
+            >
+              Upload anyway
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setDuplicateFileMatch(null)
+                setFile(null)
+                setFileHash(null)
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="form-grid" style={{ marginBottom: parsed || showHistory ? 16 : 0 }}>
         <div>
           <label htmlFor="receipt-file">Receipt image or PDF</label>
           <input
@@ -282,6 +405,8 @@ export default function ReceiptScanner({
             capture="environment"
             onChange={(event) => {
               setFile(event.target.files?.[0] ?? null)
+              setFileHash(null)
+              setDuplicateFileMatch(null)
               setError(null)
               setSuccess(null)
             }}
@@ -292,7 +417,7 @@ export default function ReceiptScanner({
             type="button"
             className="btn btn-primary"
             disabled={!file || parsing}
-            onClick={() => void handleUploadAndParse()}
+            onClick={() => void handleUploadAndParse(false)}
           >
             {parsing ? 'Uploading & parsing…' : 'Upload & parse bill'}
           </button>
@@ -300,7 +425,13 @@ export default function ReceiptScanner({
       </div>
 
       {parsed && (
-        <div className="stack">
+        <div className="stack" style={{ marginBottom: showHistory ? 20 : 0 }}>
+          {metadataDuplicate && (
+            <p className="notice notice-warn" role="alert" style={{ margin: 0 }}>
+              {formatDuplicateWarning(metadataDuplicate)}
+            </p>
+          )}
+
           <div className="form-grid">
             <div>
               <label htmlFor="receipt-supplier">Supplier / Store</label>
@@ -497,6 +628,108 @@ export default function ReceiptScanner({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showHistory && (
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+          <div className="card-header" style={{ marginBottom: 10 }}>
+            <h3>Receipt upload history</h3>
+            <span className="muted small">
+              Deleting an upload removes the file and all linked purchases or fixed bills.
+            </span>
+          </div>
+
+          {uploads.length === 0 ? (
+            <p className="muted">No receipts uploaded yet.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Bill date</th>
+                    <th>Supplier / File</th>
+                    <th>Bill no.</th>
+                    <th className="num">Total</th>
+                    <th>Type</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploads.map((upload) => (
+                    <tr key={upload.id}>
+                      <td className="nowrap">
+                        {upload.billDate ? formatDate(upload.billDate) : '—'}
+                      </td>
+                      <td>
+                        <strong>{upload.supplier || upload.fileName}</strong>
+                        {upload.supplier && (
+                          <div className="muted small">{upload.fileName}</div>
+                        )}
+                      </td>
+                      <td>{upload.billNumber || '—'}</td>
+                      <td className="num">
+                        {upload.totalAmount !== null ? formatINR(upload.totalAmount) : '—'}
+                      </td>
+                      <td>
+                        <span className="badge">{upload.targetType.replace('_', ' ')}</span>
+                      </td>
+                      <td>
+                        {confirmDeleteId === upload.id ? (
+                          <div className="actions">
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              disabled={deletingId === upload.id}
+                              onClick={() => void handleDeleteUpload(upload)}
+                            >
+                              {deletingId === upload.id ? 'Deleting…' : 'Confirm delete'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setConfirmDeleteId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="actions">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => {
+                                void getReceiptSignedUrl(upload.storagePath)
+                                  .then((url) =>
+                                    window.open(url, '_blank', 'noopener,noreferrer'),
+                                  )
+                                  .catch((err) =>
+                                    setError(
+                                      err instanceof Error
+                                        ? err.message
+                                        : 'Could not open receipt.',
+                                    ),
+                                  )
+                              }}
+                            >
+                              View receipt
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => setConfirmDeleteId(upload.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </section>

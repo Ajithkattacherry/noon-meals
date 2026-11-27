@@ -197,3 +197,18 @@ export interface ParsedReceipt {
   totalAmount: number | null
   items: ParsedReceiptItem[]
 }
+
+export interface ReceiptUploadRecord {
+  id: string
+  storagePath: string
+  fileName: string
+  mimeType: string
+  fileHash: string | null
+  billNumber: string | null
+  supplier: string | null
+  billDate: string | null
+  totalAmount: number | null
+  targetType: ReceiptTargetType
+  status: 'uploaded' | 'parsed' | 'saved' | 'failed'
+  createdAt: string
+}

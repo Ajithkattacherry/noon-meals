@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   determineTargetType,
+  findDuplicateReceipt,
   matchIngredient,
   normalizeParsedReceipt,
   normalizeUnit,
 } from './receipts'
-import type { Ingredient } from './types'
+import type { Ingredient, ReceiptUploadRecord } from './types'
 
 const ingredients: Ingredient[] = [
   { id: 'onion', name: 'Onion', unit: 'Kg', category: 'vegetable', active: true },
@@ -86,5 +87,60 @@ describe('normalizeParsedReceipt', () => {
       '2026-11-27',
     )
     expect(parsed.billDate).toBe('2026-11-27')
+  })
+})
+
+describe('findDuplicateReceipt', () => {
+  const existing: ReceiptUploadRecord[] = [
+    {
+      id: 'r1',
+      storagePath: '2026-10-03/bill118.jpg',
+      fileName: 'bill118.jpg',
+      mimeType: 'image/jpeg',
+      fileHash: 'abc123',
+      billNumber: 'No. 118',
+      supplier: 'Cheerakuzhy Stores',
+      billDate: '2026-10-03',
+      totalAmount: 2942.5,
+      targetType: 'purchase',
+      status: 'saved',
+      createdAt: '2026-10-03T09:00:00Z',
+    },
+  ]
+
+  it('detects exact file hash duplicates', () => {
+    const match = findDuplicateReceipt(existing, { fileHash: 'abc123' })
+    expect(match?.reason).toBe('file_hash')
+    expect(match?.record.id).toBe('r1')
+  })
+
+  it('detects supplier + bill number duplicates even with a different file hash', () => {
+    const match = findDuplicateReceipt(existing, {
+      fileHash: 'different',
+      supplier: 'cheerakuzhy stores',
+      billNumber: 'no. 118',
+    })
+    expect(match?.reason).toBe('bill_number')
+  })
+
+  it('detects bill date + total amount duplicates', () => {
+    const match = findDuplicateReceipt(existing, {
+      fileHash: 'different',
+      billDate: '2026-10-03',
+      totalAmount: 2942.5,
+    })
+    expect(match?.reason).toBe('date_amount')
+  })
+
+  it('returns null when no duplicate matches', () => {
+    expect(
+      findDuplicateReceipt(existing, {
+        fileHash: 'xyz',
+        supplier: 'Cheerakuzhy Stores',
+        billNumber: 'No. 119',
+        billDate: '2026-10-03',
+        totalAmount: 2262.5,
+      }),
+    ).toBeNull()
   })
 })

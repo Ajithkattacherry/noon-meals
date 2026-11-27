@@ -153,3 +153,59 @@ export function determineTargetType(items: ParsedReceiptItem[]): ReceiptTargetTy
   if (hasFixed) return 'fixed_bill'
   return 'purchase'
 }
+
+export type DuplicateReason = 'file_hash' | 'bill_number' | 'date_amount'
+
+export interface DuplicateMatch {
+  reason: DuplicateReason
+  record: import('./types').ReceiptUploadRecord
+}
+
+/**
+ * Checks existing receipt uploads for a duplicate by:
+ * 1. Exact file SHA-256 hash
+ * 2. Matching supplier + bill number (case-insensitive)
+ * 3. Matching bill date + total amount (when totalAmount > 0)
+ */
+export function findDuplicateReceipt(
+  existing: import('./types').ReceiptUploadRecord[],
+  candidate: {
+    fileHash?: string | null
+    supplier?: string | null
+    billNumber?: string | null
+    billDate?: string | null
+    totalAmount?: number | null
+  },
+): DuplicateMatch | null {
+  const hash = candidate.fileHash?.trim()
+  if (hash) {
+    const byHash = existing.find((r) => r.fileHash === hash)
+    if (byHash) return { reason: 'file_hash', record: byHash }
+  }
+
+  const supplier = candidate.supplier?.trim().toLowerCase()
+  const billNo = candidate.billNumber?.trim().toLowerCase()
+  if (supplier && billNo) {
+    const byBill = existing.find(
+      (r) =>
+        r.supplier?.trim().toLowerCase() === supplier &&
+        r.billNumber?.trim().toLowerCase() === billNo,
+    )
+    if (byBill) return { reason: 'bill_number', record: byBill }
+  }
+
+  const date = candidate.billDate?.trim()
+  const total = candidate.totalAmount
+  if (date && total !== null && total !== undefined && total > 0) {
+    const roundedTotal = roundMoney(total)
+    const byDateTotal = existing.find(
+      (r) =>
+        r.billDate === date &&
+        r.totalAmount !== null &&
+        roundMoney(r.totalAmount) === roundedTotal,
+    )
+    if (byDateTotal) return { reason: 'date_amount', record: byDateTotal }
+  }
+
+  return null
+}
