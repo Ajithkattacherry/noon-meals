@@ -1,0 +1,28 @@
+name: Supabase keep-alive
+
+# Free Supabase projects pause after a week of inactivity. One small request a
+# week keeps the project awake. The anon key is safe to use here: RLS returns no
+# rows, and the request only proves the project is reachable.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the Supabase REST endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY secrets are required."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            "$SUPABASE_URL/rest/v1/ingredients?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
