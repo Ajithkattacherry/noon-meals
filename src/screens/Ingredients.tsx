@@ -1,17 +1,35 @@
 import { useEffect, useState } from 'react'
 import { listIngredients, saveIngredient } from '../data/ingredients'
 import { UNITS } from '../lib/units'
-import type { Ingredient, Unit } from '../lib/types'
+import type { Ingredient, IngredientCategory, Unit } from '../lib/types'
+
+const CATEGORIES: { value: IngredientCategory; label: string }[] = [
+  { value: 'grocery', label: 'Grocery' },
+  { value: 'vegetable', label: 'Vegetable' },
+  { value: 'snacks', label: 'Snacks' },
+  { value: 'fixed', label: 'Fixed (Rice / Gas / Transport)' },
+]
+
+function categoryLabel(category?: IngredientCategory): string {
+  return CATEGORIES.find((c) => c.value === category)?.label.split(' ')[0] ?? 'Grocery'
+}
 
 interface FormState {
   id?: string
   name: string
   unit: Unit | ''
+  category: IngredientCategory
   description: string
   active: boolean
 }
 
-const EMPTY_FORM: FormState = { name: '', unit: '', description: '', active: true }
+const EMPTY_FORM: FormState = {
+  name: '',
+  unit: '',
+  category: 'grocery',
+  description: '',
+  active: true,
+}
 
 export default function Ingredients() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
@@ -21,6 +39,7 @@ export default function Ingredients() {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState<IngredientCategory | 'all'>('all')
 
   async function load() {
     setLoading(true)
@@ -61,6 +80,7 @@ export default function Ingredients() {
         id: form.id,
         name: form.name,
         unit: form.unit,
+        category: form.category,
         description: form.description,
         active: form.active,
       })
@@ -81,6 +101,7 @@ export default function Ingredients() {
         id: ingredient.id,
         name: ingredient.name,
         unit: ingredient.unit,
+        category: ingredient.category ?? 'grocery',
         description: ingredient.description ?? undefined,
         active: ingredient.active === false,
       })
@@ -97,11 +118,17 @@ export default function Ingredients() {
       id: ingredient.id,
       name: ingredient.name,
       unit: ingredient.unit,
+      category: ingredient.category ?? 'grocery',
       description: ingredient.description ?? '',
       active: ingredient.active !== false,
     })
     setFormError(null)
   }
+
+  const visibleIngredients =
+    categoryFilter === 'all'
+      ? ingredients
+      : ingredients.filter((item) => (item.category ?? 'grocery') === categoryFilter)
 
   return (
     <div>
@@ -109,8 +136,8 @@ export default function Ingredients() {
         <div>
           <h1>Ingredients</h1>
           <p>
-            Every ingredient has exactly one unit. Deactivated ingredients stay in history but
-            disappear from purchase and recipe pickers.
+            Every ingredient has one unit and a budget category (Vegetable, Grocery, Snacks, or
+            Fixed). Deactivated ingredients stay in history but disappear from pickers.
           </p>
         </div>
       </div>
@@ -155,6 +182,23 @@ export default function Ingredients() {
             </div>
 
             <div>
+              <label htmlFor="ingredient-category">Category</label>
+              <select
+                id="ingredient-category"
+                value={form.category}
+                onChange={(event) =>
+                  update('category', event.target.value as IngredientCategory)
+                }
+              >
+                {CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label htmlFor="ingredient-description">Description (optional)</label>
               <input
                 id="ingredient-description"
@@ -193,26 +237,44 @@ export default function Ingredients() {
         <section className="card">
           <div className="card-header">
             <h2>All ingredients</h2>
-            <span className="badge">{ingredients.length}</span>
+            <div className="inline">
+              <select
+                aria-label="Filter by category"
+                value={categoryFilter}
+                onChange={(event) =>
+                  setCategoryFilter(event.target.value as IngredientCategory | 'all')
+                }
+                style={{ width: 'auto', padding: '4px 8px', fontSize: '0.85rem' }}
+              >
+                <option value="all">All categories</option>
+                {CATEGORIES.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label.split(' ')[0]}
+                  </option>
+                ))}
+              </select>
+              <span className="badge">{visibleIngredients.length}</span>
+            </div>
           </div>
 
           {loading ? (
             <p className="muted">Loading ingredients…</p>
-          ) : ingredients.length === 0 ? (
-            <p className="muted">No ingredients yet. Add Onion to get started.</p>
+          ) : visibleIngredients.length === 0 ? (
+            <p className="muted">No ingredients in this view yet.</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Name</th>
+                    <th>Category</th>
                     <th>Unit</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredients.map((ingredient) => {
+                  {visibleIngredients.map((ingredient) => {
                     const active = ingredient.active !== false
                     return (
                       <tr key={ingredient.id} className={active ? '' : 'row-inactive'}>
@@ -221,6 +283,9 @@ export default function Ingredients() {
                           {ingredient.description && (
                             <div className="muted small">{ingredient.description}</div>
                           )}
+                        </td>
+                        <td>
+                          <span className="badge">{categoryLabel(ingredient.category)}</span>
                         </td>
                         <td>{ingredient.unit}</td>
                         <td>

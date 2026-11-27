@@ -76,6 +76,21 @@ export async function listMenus(): Promise<MenuSummary[]> {
   }))
 }
 
+export async function listMenusInRange(
+  from: string,
+  to: string,
+): Promise<DailyMenu[]> {
+  const { data, error } = await requireSupabase()
+    .from('daily_menus')
+    .select(MENU_COLUMNS)
+    .gte('menu_date', from)
+    .lte('menu_date', to)
+    .order('menu_date', { ascending: true })
+
+  if (error) throw new Error(errorMessage(error))
+  return (data as MenuRow[]).map(mapMenu)
+}
+
 /** Creates or updates the draft for a date in one transaction. */
 export async function saveDraftMenu(input: SaveDraftMenuInput): Promise<DailyMenu> {
   const { error } = await requireSupabase().rpc('save_draft_menu', {

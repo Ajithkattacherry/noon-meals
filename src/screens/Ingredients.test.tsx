@@ -13,6 +13,7 @@ const onion = {
   id: 'onion',
   name: 'Onion',
   unit: 'Kg' as const,
+  category: 'vegetable' as const,
   description: null,
   active: true,
 }
@@ -48,19 +49,21 @@ describe('Ingredients screen', () => {
     expect(saveIngredient).not.toHaveBeenCalled()
   })
 
-  it('saves a new ingredient', async () => {
+  it('saves a new ingredient with its selected category', async () => {
     const user = userEvent.setup()
     render(<Ingredients />)
 
     await screen.findByText('Onion')
     await user.type(screen.getByLabelText('Name'), 'Tomato')
     await user.selectOptions(screen.getByLabelText('Unit'), 'Kg')
+    await user.selectOptions(screen.getByLabelText('Category'), 'vegetable')
     await user.click(screen.getByRole('button', { name: 'Save ingredient' }))
 
     expect(saveIngredient).toHaveBeenCalledWith({
       id: undefined,
       name: 'Tomato',
       unit: 'Kg',
+      category: 'vegetable',
       description: '',
       active: true,
     })

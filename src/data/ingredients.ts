@@ -1,10 +1,11 @@
 import { errorMessage, requireSupabase } from './supabase'
-import type { Ingredient, Unit } from '../lib/types'
+import type { Ingredient, IngredientCategory, Unit } from '../lib/types'
 
 interface IngredientRow {
   id: string
   name: string
   unit: Unit
+  category: IngredientCategory
   description: string | null
   active: boolean
 }
@@ -13,6 +14,7 @@ export interface SaveIngredientInput {
   id?: string
   name: string
   unit: Unit
+  category?: IngredientCategory
   description?: string
   active: boolean
 }
@@ -22,6 +24,7 @@ function mapIngredient(row: IngredientRow): Ingredient {
     id: row.id,
     name: row.name,
     unit: row.unit,
+    category: row.category ?? 'grocery',
     description: row.description,
     active: row.active,
   }
@@ -30,7 +33,7 @@ function mapIngredient(row: IngredientRow): Ingredient {
 export async function listIngredients(): Promise<Ingredient[]> {
   const { data, error } = await requireSupabase()
     .from('ingredients')
-    .select('id, name, unit, description, active')
+    .select('id, name, unit, category, description, active')
     .order('name', { ascending: true })
 
   if (error) throw new Error(errorMessage(error))
@@ -42,6 +45,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<Ingred
   const payload = {
     name: input.name.trim(),
     unit: input.unit,
+    category: input.category ?? 'grocery',
     description: input.description?.trim() || null,
     active: input.active,
   }
@@ -51,7 +55,7 @@ export async function saveIngredient(input: SaveIngredientInput): Promise<Ingred
     : client.from('ingredients').insert(payload)
 
   const { data, error } = await query
-    .select('id, name, unit, description, active')
+    .select('id, name, unit, category, description, active')
     .single()
 
   if (error) throw new Error(errorMessage(error))

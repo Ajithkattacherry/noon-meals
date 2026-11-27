@@ -4,6 +4,7 @@ import { todayISO } from './lib/format'
 import Dashboard from './screens/Dashboard'
 import DailyMenu from './screens/DailyMenu'
 import DailyReview from './screens/DailyReview'
+import BudgetPlanner from './screens/BudgetPlanner'
 import Ingredients from './screens/Ingredients'
 import Login from './screens/Login'
 import Purchases from './screens/Purchases'
@@ -34,6 +35,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             <NavLink to="/recipes">Recipes</NavLink>
             <NavLink to="/daily">Daily menu</NavLink>
             <NavLink to={`/review/${todayISO()}`}>Today’s review</NavLink>
+            <NavLink to="/budget">Budget planner</NavLink>
             <NavLink to="/reports">Reports</NavLink>
           </nav>
 
@@ -79,6 +81,7 @@ export default function App() {
           <Route path="/recipes" element={<Recipes />} />
           <Route path="/daily" element={<DailyMenu />} />
           <Route path="/review/:menuDate" element={<DailyReview />} />
+          <Route path="/budget" element={<BudgetPlanner />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

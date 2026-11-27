@@ -1,9 +1,12 @@
 export type Unit = 'Kg' | 'Gram' | 'Liter' | 'Millilitre' | 'Each'
 
+export type IngredientCategory = 'fixed' | 'grocery' | 'vegetable' | 'snacks'
+
 export interface Ingredient {
   id: string
   name: string
   unit: Unit
+  category?: IngredientCategory
   description?: string | null
   active?: boolean
 }
@@ -98,4 +101,72 @@ export interface DailyMenu {
 /** Key used for a per-line quantity override. */
 export function overrideKey(recipeId: string, ingredientId: string): string {
   return `${recipeId}:${ingredientId}`
+}
+
+export interface FixedBill {
+  id: string
+  monthlyBudgetId: string
+  label: string
+  billDate: string
+  amount: number
+  notes?: string | null
+}
+
+export interface WeeklyBillAllocation {
+  id: string
+  monthlyBudgetId: string
+  weekStart: string
+  groceryBill: number
+  vegetableBill: number
+  snacksBill: number
+  notes?: string | null
+}
+
+export interface MonthlyBudget {
+  id: string
+  month: string
+  siteAmount: number | null
+  plannedTarget: number
+  notes?: string | null
+}
+
+export interface BudgetReconciliation {
+  plannedTarget: number
+  totalFixed: number
+  distributableBudget: number
+  totalGrocery: number
+  totalVegetable: number
+  totalSnacks: number
+  totalWeeklyAllocated: number
+  totalPlanned: number
+  remainingToAllocate: number
+}
+
+export interface WeekIngredientItem {
+  ingredientId: string
+  ingredientName: string
+  category: IngredientCategory
+  unit: Unit
+  totalQuantity: number
+  estimatedCost: number | null
+  hasMissingPrice: boolean
+}
+
+export interface WeekDayMenuSummary {
+  menuDate: string
+  weekday: string
+  studentCount: number
+  recipeNames: string[]
+}
+
+export interface WeekMenuBreakdown {
+  weekStart: string
+  weekEnd: string
+  days: WeekDayMenuSummary[]
+  vegetables: WeekIngredientItem[]
+  groceries: WeekIngredientItem[]
+  snacks: WeekIngredientItem[]
+  estimatedVegetableCost: number
+  estimatedGroceryCost: number
+  estimatedSnacksCost: number
 }
